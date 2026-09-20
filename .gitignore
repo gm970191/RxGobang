@@ -1,0 +1,21 @@
+# 忽略日志文件
+*.log
+
+# 忽略环境变量文件
+.env
+.env.*
+deploy.env
+
+# 忽略本地打包产物
+RxGobang-deploy.zip
+.deploy-stage/
+
+# 忽略运行时文件
+logs/
+rxgobang.pid
+
+# 忽略临时文件
+*.tmp
+*.temp
+__pycache__/
+*.pyc

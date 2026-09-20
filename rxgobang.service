@@ -1,0 +1,27 @@
+# 瑞学五子棋 systemd 单元文件（可选，给 Ubuntu 开机自启用）
+#
+# 使用前请先用 start.sh 成功启动过一次，确保已有：
+#   /www/wwwroot/RxGobang8003/index.html
+#
+# 安装：
+#   cp /www/wwwroot/RxGobang8003/rxgobang.service /etc/systemd/system/rxgobang.service
+#   systemctl daemon-reload
+#   systemctl enable --now rxgobang
+#
+# 若网站不在 /www/wwwroot/RxGobang8003，或运行用户不是 www，请改下面几项。
+
+[Unit]
+Description=RxGobang 瑞学五子棋
+After=network.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/RxGobang8003
+ExecStart=/usr/bin/python3 -m http.server 8003 --bind 0.0.0.0 --directory /www/wwwroot/RxGobang8003
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

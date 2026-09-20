@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>瑞学五子棋</title>
+  <meta name="theme-color" content="#14110d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="瑞学五子棋" />
+  <meta name="description" content="人机对弈五子棋，五级棋力，可安装到主屏幕离线对局。" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true">
+    <div class="mist mist-a"></div>
+    <div class="mist mist-b"></div>
+    <div class="grain"></div>
+  </div>
+
+  <div id="start-screen" class="screen">
+    <div class="start-frame">
+      <div class="seal" aria-hidden="true">瑞学</div>
+      <p class="eyebrow">人机对弈 · 十五路棋盘</p>
+      <h1 class="brand">瑞学五子棋</h1>
+      <p class="lead">落子无悔，五连为胜。选好棋力与先手，便开一局。</p>
+
+      <section class="chooser">
+        <h2>棋力</h2>
+        <div class="level-grid" id="level-grid"></div>
+        <p class="level-desc" id="level-desc">懂得取舍，大局初成</p>
+      </section>
+
+      <section class="chooser">
+        <h2>执子</h2>
+        <div class="side-row">
+          <button type="button" class="side-btn is-active" data-side="black">
+            <span class="stone-swatch black"></span>
+            执黑先手
+          </button>
+          <button type="button" class="side-btn" data-side="white">
+            <span class="stone-swatch white"></span>
+            执白后手
+          </button>
+        </div>
+      </section>
+
+      <button type="button" class="cta" id="btn-start">开 始 对 弈</button>
+    </div>
+  </div>
+
+  <div id="pwa-banner" class="pwa-banner is-hidden" role="status">
+    <p id="pwa-banner-text">可添加到主屏幕</p>
+    <div class="pwa-banner-actions">
+      <button type="button" class="cta pwa-install is-hidden" id="btn-install">安装</button>
+      <button type="button" class="ghost" id="btn-pwa-close">稍后</button>
+    </div>
+  </div>
+
+  <div id="game-screen" class="screen is-hidden" hidden>
+    <header class="game-top">
+      <div class="brand-mini">瑞学五子棋</div>
+      <button type="button" class="text-btn" id="btn-home">返回首页</button>
+    </header>
+
+    <div class="table">
+      <aside class="dossier">
+        <div class="dossier-block">
+          <span class="kicker">本局</span>
+          <strong id="meta-level">中级</strong>
+          <p id="meta-desc">懂得取舍，大局初成</p>
+        </div>
+        <div class="dossier-block">
+          <span class="kicker">你的棋</span>
+          <strong id="meta-side">执黑先手</strong>
+        </div>
+        <div class="turn-card" id="turn-card">
+          <span class="turn-dot" id="turn-dot"></span>
+          <div>
+            <span class="kicker">行棋</span>
+            <strong id="turn-text">请落子</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main class="board-stage">
+        <div class="board-tray">
+          <canvas id="board" width="640" height="640" aria-label="五子棋棋盘"></canvas>
+          <div class="think-veil is-hidden" id="think-veil">
+            <span class="think-pulse"></span>
+            棋手揣摩中
+          </div>
+        </div>
+      </main>
+
+      <aside class="controls">
+        <div class="score-card">
+          <div>
+            <span class="kicker">胜</span>
+            <b id="stat-win">0</b>
+          </div>
+          <div>
+            <span class="kicker">负</span>
+            <b id="stat-lose">0</b>
+          </div>
+          <div>
+            <span class="kicker">和</span>
+            <b id="stat-draw">0</b>
+          </div>
+        </div>
+        <button type="button" class="ctrl-btn" id="btn-undo">悔棋</button>
+        <button type="button" class="ctrl-btn" id="btn-resign">认输</button>
+        <button type="button" class="ctrl-btn" id="btn-restart">再来一局</button>
+        <label class="toggle">
+          <input type="checkbox" id="chk-numbers" />
+          显示手数
+        </label>
+      </aside>
+
+      <section class="record-panel" aria-label="落子记录">
+        <span class="kicker">落子</span>
+        <ul class="record" id="record-list"></ul>
+      </section>
+    </div>
+  </div>
+
+  <div id="result-modal" class="modal is-hidden" hidden role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <div class="modal-card">
+      <p class="kicker" id="result-kicker">对局结束</p>
+      <h2 id="result-title">黑棋胜</h2>
+      <p id="result-sub">五子连珠，一锤定音。</p>
+      <div class="modal-actions">
+        <button type="button" class="cta" id="btn-again">再战一局</button>
+        <button type="button" class="ghost" id="btn-back">返回首页</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+  <script src="js/pwa.js" defer></script>
+</body>
+</html>
