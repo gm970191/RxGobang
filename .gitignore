@@ -13,6 +13,9 @@ RxGobang-deploy.zip
 # 忽略运行时文件
 logs/
 rxgobang.pid
+certs/*.crt
+certs/*.key
+certs/*.pem
 
 # 忽略临时文件
 *.tmp

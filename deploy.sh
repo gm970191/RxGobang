@@ -67,7 +67,7 @@ APP_PORT="${APP_PORT:-8003}"
 DEPLOY_PASS="${DEPLOY_PASS:-}"
 
 REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
-SITE_URL="http://${DEPLOY_HOST}:${APP_PORT}/"
+SITE_URL="https://${DEPLOY_HOST}:${APP_PORT}/"
 
 echo "[info] target  ${REMOTE}:${DEPLOY_SSH_PORT}"
 echo "[info] path    ${DEPLOY_PATH}"
@@ -155,20 +155,25 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"; cleanup' EXIT
 
+if [[ ! -f "$ROOT/serve.py" ]]; then
+  echo "[error] 找不到 serve.py"
+  exit 1
+fi
+
 cp "$ROOT/index.html" "$STAGE/index.html"
 cp "$ROOT/start.sh" "$STAGE/start.sh"
-cp "$ROOT/manifest.json" "$STAGE/manifest.json"
-cp "$ROOT/sw.js" "$STAGE/sw.js"
+cp "$ROOT/serve.py" "$STAGE/serve.py"
 if [[ -f "$ROOT/rxgobang.service" ]]; then
   cp "$ROOT/rxgobang.service" "$STAGE/rxgobang.service"
 fi
 cp -R "$ROOT/css" "$STAGE/css"
 cp -R "$ROOT/js" "$STAGE/js"
+rm -f "$STAGE/js/pwa.js"
 mkdir -p "$STAGE/icons"
 find "$ROOT/icons" -maxdepth 1 -type f -name '*.png' ! -name 'icon-source.png' -exec cp {} "$STAGE/icons/" \;
 
-echo "[info] 将上传: start.sh, index.html, css/, js/, icons/, manifest.json, sw.js"
-echo "[info] 不会上传: deploy.env, .git, logs"
+echo "[info] 将上传: start.sh, serve.py, index.html, css/, js/, icons/"
+echo "[info] 不会上传: deploy.env, .git, logs, certs"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] 暂存目录文件："
@@ -184,6 +189,7 @@ if command -v rsync >/dev/null 2>&1; then
   echo "[info] rsync 同步 ..."
   rsync -az --delete \
     --exclude='logs/' \
+    --exclude='certs/' \
     --exclude='*.pid' \
     --exclude='deploy.env' \
     -e "ssh -p ${DEPLOY_SSH_PORT} -o StrictHostKeyChecking=accept-new" \
@@ -193,25 +199,25 @@ else
   tar -C "$STAGE" -czf - . | ssh_run "tar -xzf - -C '$DEPLOY_PATH'"
 fi
 
-echo "[info] 修复 start.sh 换行符 ..."
-ssh_run "sed -i 's/\r$//' '$DEPLOY_PATH/start.sh' && chmod +x '$DEPLOY_PATH/start.sh'"
+echo "[info] 修复脚本换行符 ..."
+ssh_run "sed -i 's/\r$//' '$DEPLOY_PATH/start.sh' '$DEPLOY_PATH/serve.py' && chmod +x '$DEPLOY_PATH/start.sh' '$DEPLOY_PATH/serve.py' && rm -f '$DEPLOY_PATH/sw.js' '$DEPLOY_PATH/manifest.json' '$DEPLOY_PATH/js/pwa.js'"
 
 if [[ "$SKIP_RESTART" -eq 1 ]]; then
   echo "[info] 已跳过重启。文件已上传到 $DEPLOY_PATH"
   exit 0
 fi
 
-echo "[info] 检查远程 Python ..."
-ssh_run "command -v python3 >/dev/null || (export DEBIAN_FRONTEND=noninteractive && apt-get update -y && apt-get install -y python3)"
+echo "[info] 检查远程 Python / curl ..."
+ssh_run "command -v python3 >/dev/null && command -v curl >/dev/null || (export DEBIAN_FRONTEND=noninteractive && apt-get update -y && apt-get install -y python3 curl)"
 
 echo "[info] 重启服务 ..."
-ssh_run "bash '$DEPLOY_PATH/start.sh' --stop >/dev/null 2>&1 || true; bash '$DEPLOY_PATH/start.sh' --daemon"
+ssh_run "bash '$DEPLOY_PATH/start.sh' --stop >/dev/null 2>&1 || true; if [[ -f '$DEPLOY_PATH/certs/server.crt' && -f '$DEPLOY_PATH/certs/server.key' ]]; then CERT_IP='${DEPLOY_HOST}' bash '$DEPLOY_PATH/start.sh' --daemon; else CERT_IP='${DEPLOY_HOST}' bash '$DEPLOY_PATH/start.sh' --issue-le; fi"
 
-echo "[info] 检查防火墙是否放行 ${APP_PORT} ..."
-ssh_run "command -v ufw >/dev/null 2>&1 && ufw allow ${APP_PORT}/tcp || true"
+echo "[info] 检查防火墙是否放行 ${APP_PORT} 和 443（443 仅用于证书续期） ..."
+ssh_run "command -v ufw >/dev/null 2>&1 && ufw allow ${APP_PORT}/tcp && ufw allow 443/tcp || true"
 
 echo "[info] 等待进程起来 ..."
-health_py="import urllib.request; urllib.request.urlopen('http://127.0.0.1:${APP_PORT}/', timeout=3).read(32)"
+health_py="import ssl,urllib.request; ctx=ssl._create_unverified_context(); urllib.request.urlopen('https://127.0.0.1:${APP_PORT}/', context=ctx, timeout=3).read(32)"
 ok=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
   if ssh_run "python3 -c \"$health_py\"" >/dev/null 2>&1; then

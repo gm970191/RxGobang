@@ -73,7 +73,7 @@ $SshPort = Get-CleanText $(if ($env:DEPLOY_SSH_PORT) { $env:DEPLOY_SSH_PORT } el
 $AppPort = Get-CleanText $(if ($env:APP_PORT) { $env:APP_PORT } else { "8003" })
 $Password = Get-CleanText $(if ($env:DEPLOY_PASS) { $env:DEPLOY_PASS } else { "" })
 $Remote = "${UserName}@${HostName}"
-$SiteUrl = "http://${HostName}:${AppPort}/"
+$SiteUrl = "https://${HostName}:${AppPort}/"
 
 Write-Info ("target  {0}:{1}" -f $Remote, $SshPort)
 Write-Info ("path    {0}" -f $RemotePath)
@@ -190,22 +190,26 @@ try {
     }
 
     $index = Join-Path $Root "index.html"
+    $servePy = Join-Path $Root "serve.py"
     if (-not (Test-Path $index)) {
         Raise-DeployError "找不到 index.html"
+    }
+    if (-not (Test-Path $servePy)) {
+        Raise-DeployError "找不到 serve.py"
     }
 
     $stage = Join-Path $env:TEMP ("rxgobang-stage-" + [guid]::NewGuid().ToString("n"))
     New-Item -ItemType Directory -Path $stage | Out-Null
     Copy-Item (Join-Path $Root "index.html") (Join-Path $stage "index.html")
     Copy-Item (Join-Path $Root "start.sh") (Join-Path $stage "start.sh")
-    Copy-Item (Join-Path $Root "manifest.json") (Join-Path $stage "manifest.json")
-    Copy-Item (Join-Path $Root "sw.js") (Join-Path $stage "sw.js")
+    Copy-Item (Join-Path $Root "serve.py") (Join-Path $stage "serve.py")
     $service = Join-Path $Root "rxgobang.service"
     if (Test-Path $service) {
         Copy-Item $service (Join-Path $stage "rxgobang.service")
     }
     Copy-Item -Recurse -Force (Join-Path $Root "css") (Join-Path $stage "css")
     Copy-Item -Recurse -Force (Join-Path $Root "js") (Join-Path $stage "js")
+    Remove-Item -Force (Join-Path $stage "js/pwa.js") -ErrorAction SilentlyContinue
     $iconDir = Join-Path $stage "icons"
     New-Item -ItemType Directory -Path $iconDir | Out-Null
     Get-ChildItem (Join-Path $Root "icons") -File -Filter "*.png" | Where-Object {
@@ -214,8 +218,8 @@ try {
         Copy-Item $_.FullName (Join-Path $iconDir $_.Name)
     }
 
-    Write-Info "将上传: start.sh, index.html, css/, js/, icons/, manifest.json, sw.js"
-    Write-Info "不会上传: deploy.env, .git, logs"
+    Write-Info "将上传: start.sh, serve.py, index.html, css/, js/, icons/"
+    Write-Info "不会上传: deploy.env, .git, logs, certs"
 
     if ($DryRun) {
         Write-Host ('[dry-run] 暂存目录: ' + $stage)
@@ -254,8 +258,9 @@ try {
         ("mkdir -p {0}" -f (Quote-BashSingle $RemotePath))
         ("tar -xzf {0} -C {1}" -f (Quote-BashSingle $remoteTar), (Quote-BashSingle $RemotePath))
         ("rm -f {0}" -f (Quote-BashSingle $remoteTar))
-        ('sed -i ''s/\r$//'' {0}' -f (Quote-BashSingle "$RemotePath/start.sh"))
-        ("chmod +x {0}" -f (Quote-BashSingle "$RemotePath/start.sh"))
+        ('sed -i ''s/\r$//'' {0} {1}' -f (Quote-BashSingle "$RemotePath/start.sh"), (Quote-BashSingle "$RemotePath/serve.py"))
+        ("chmod +x {0} {1}" -f (Quote-BashSingle "$RemotePath/start.sh"), (Quote-BashSingle "$RemotePath/serve.py"))
+        ("rm -f {0} {1} {2}" -f (Quote-BashSingle "$RemotePath/sw.js"), (Quote-BashSingle "$RemotePath/manifest.json"), (Quote-BashSingle "$RemotePath/js/pwa.js"))
     ) -join " && "
     Invoke-Remote $extract
 
@@ -264,21 +269,21 @@ try {
         return
     }
 
-    Write-Info "检查远程 Python ..."
-    $ensurePy = 'command -v python3 >/dev/null 2>&1 || (export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y python3)'
+    Write-Info "检查远程 Python / curl ..."
+    $ensurePy = 'command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 || (export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y python3 curl)'
     Invoke-Remote $ensurePy
 
     Write-Info "重启服务 ..."
     $startSh = Quote-BashSingle "$RemotePath/start.sh"
-    $restart = ('bash {0} --stop >/dev/null 2>&1 || true; bash {0} --daemon' -f $startSh)
+    $restart = ('bash {0} --stop >/dev/null 2>&1 || true; if [ -f {1} ] && [ -f {2} ]; then CERT_IP={3} bash {0} --daemon; else CERT_IP={3} bash {0} --issue-le; fi' -f $startSh, (Quote-BashSingle "$RemotePath/certs/server.crt"), (Quote-BashSingle "$RemotePath/certs/server.key"), (Quote-BashSingle $HostName))
     Invoke-Remote $restart
 
-    Write-Info ("检查防火墙是否放行 {0} ..." -f $AppPort)
-    $openFw = ('(command -v ufw >/dev/null 2>&1 && ufw allow {0}/tcp) || (command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --permanent --add-port={0}/tcp && firewall-cmd --reload) || true' -f $AppPort)
+    Write-Info ("检查防火墙是否放行 {0} 和 443 ..." -f $AppPort)
+    $openFw = ('(command -v ufw >/dev/null 2>&1 && ufw allow {0}/tcp && ufw allow 443/tcp) || (command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --permanent --add-port={0}/tcp && firewall-cmd --permanent --add-port=443/tcp && firewall-cmd --reload) || true' -f $AppPort)
     Invoke-Remote $openFw
 
     Write-Info "等待进程起来 ..."
-    $healthPy = "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${AppPort}/', timeout=3).read(32)"
+    $healthPy = "import ssl,urllib.request; ctx=ssl._create_unverified_context(); urllib.request.urlopen('https://127.0.0.1:${AppPort}/', context=ctx, timeout=3).read(32)"
     $healthCmd = ('python3 -c {0}' -f (Quote-BashSingle $healthPy))
     $healthy = $false
     for ($i = 0; $i -lt 10; $i++) {

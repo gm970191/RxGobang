@@ -2,6 +2,17 @@ import { SIZE, EMPTY, BLACK, WHITE, createBoard, checkWin, isFull, opponent, coo
 import { LEVELS, chooseMove, openingBias } from "./ai.js";
 import { createRenderer } from "./render.js";
 
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => reg.unregister());
+  });
+}
+if (window.caches) {
+  caches.keys().then((keys) => {
+    keys.filter((key) => key.startsWith("rxgobang-")).forEach((key) => caches.delete(key));
+  });
+}
+
 const STORAGE_KEY = "rxgobang-stats";
 
 const els = {
